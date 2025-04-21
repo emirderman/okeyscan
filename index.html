@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>okeyscan - Sayı Tanıma</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f9f4ef;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      margin: 0;
+      padding: 20px;
+    }
+
+    video {
+      width: 100%;
+      max-width: 480px;
+      border-radius: 10px;
+      margin-top: 10px;
+    }
+
+    #canvas {
+      display: none;
+    }
+
+    #results {
+      margin-top: 20px;
+      font-size: 1.2rem;
+      background: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #5851db;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #3f3dbf;
+    }
+  </style>
+</head>
+<body>
+  <h2>🀄 OkeyScan - Taş Sayı Tanıma</h2>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+  <button onclick="captureImage()">📸 Fotoğraf Çek</button>
+  <div id="results">Tanıma bekleniyor...</div>
+
+  <!-- OpenCV -->
+  <script async src="https://docs.opencv.org/4.7.0/opencv.js" onload="onOpenCvReady();"></script>
+  <!-- Tesseract -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const resultsDiv = document.getElementById('results');
+
+    function startCamera() {
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { exact: "environment" } // Arka kamera
+        },
+        audio: false
+      }).then(stream => {
+        video.srcObject = stream;
+      }).catch(err => {
+        console.error("Kamera açılırken hata:", err);
+        resultsDiv.innerText = "📵 Kamera açılamadı.";
+      });
+    }
+
+    function captureImage() {
+      let ctx = canvas.getContext("2d");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+
+      let src = cv.imread(canvas);
+      let gray = new cv.Mat();
+      let blurred = new cv.Mat();
+      let thresholded = new cv.Mat();
+      let morph = new cv.Mat();
+
+      // Gri ton
+      cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+      // Gürültü azalt
+      cv.GaussianBlur(gray, blurred, new cv.Size(3, 3), 0);
+
+      // Kontrast artır + ters threshold
+      cv.adaptiveThreshold(blurred, thresholded, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY_INV, 15, 4);
+
+      // Kenarları netleştir
+      let kernel = cv.Mat.ones(2, 2, cv.CV_8U);
+      cv.morphologyEx(thresholded, morph, cv.MORPH_CLOSE, kernel);
+
+      // canvas'ı görünmez tut
+      canvas.style.display = "none";
+      cv.imshow(canvas, morph);
+
+      // OCR (sadece rakamlar)
+      Tesseract.recognize(canvas.toDataURL(), 'eng', {
+        tessedit_char_whitelist: '0123456789'
+      }).then(({ data: { text } }) => {
+        const cleaned = text.replace(/[^0-9\s]/g, '').trim();
+        resultsDiv.innerText = cleaned ? `📋 Sayılar: ${cleaned}` : "Hiçbir sayı algılanamadı.";
+      }).catch(err => {
+        console.error(err);
+        resultsDiv.innerText = "Tanıma sırasında hata oluştu.";
+      });
+
+      // Belleği temizle
+      src.delete(); gray.delete(); blurred.delete(); thresholded.delete(); morph.delete(); kernel.delete();
+    }
+
+    function onOpenCvReady() {
+      startCamera();
+    }
+  </script>
+</body>
+</html>
